@@ -190,6 +190,7 @@ hterm.Terminal = function({profileId, storage} = {}) {
 
   // Whether we allow images to be shown.
   this.allowImagesInline = null;
+  this.onFreconBox = null;
 
   this.reportFocus = false;
 

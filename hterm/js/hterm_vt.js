@@ -1221,6 +1221,9 @@ hterm.VT.DCS = {};
  * string terminated by either ST or BEL.
  */
 hterm.VT.OSC = {};
+hterm.VT.OSC['box'] = function(parseState) {
+  this.terminal.onFreconBox?.(parseState.args[0]);
+};
 
 /**
  * Collection of VT52 sequences.
@@ -1589,7 +1592,8 @@ hterm.VT.ESC[']'] = function(parseState) {
     }
 
     // We're done.
-    const ary = parseState.args[0].match(/^(\d+);?(.*)$/);
+    const ary = parseState.args[0].match(/^(\d+);?(.*)$/) ||
+        parseState.args[0].match(/^(box):(.*)$/);
     if (ary) {
       parseState.args[0] = ary[2];
       this.dispatch('OSC', ary[1], parseState);

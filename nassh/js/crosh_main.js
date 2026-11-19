@@ -145,6 +145,7 @@ Crosh.init = function() {
     crosh.run();
   };
   terminal.onTerminalReady = function() {
+    terminal.onFreconBox = (args) => drawFreconBox(terminal.getDocument(), args);
     terminal.allowImagesInline = true;
     terminal.getPrefs().addObserver('allow-images-inline', () => {
       terminal.allowImagesInline = true;
@@ -173,9 +174,15 @@ Crosh.init = function() {
 
   terminal.contextMenu.setItems([
     {name: Crosh.msg('TERMINAL_CLEAR_MENU_LABEL'),
-     action: function() { terminal.wipeContents(); }},
+     action: function() {
+       terminal.getDocument().getElementById('crosh-boxes')?.remove();
+       terminal.wipeContents();
+     }},
     {name: Crosh.msg('TERMINAL_RESET_MENU_LABEL'),
-     action: function() { terminal.reset(); }},
+     action: function() {
+       terminal.getDocument().getElementById('crosh-boxes')?.remove();
+       terminal.reset();
+     }},
     {name: Crosh.msg('NEW_WINDOW_MENU_LABEL'),
      action: function() {
        // Preserve the full URI in case it has args like for vmshell.
@@ -196,6 +203,83 @@ Crosh.init = function() {
 
   return true;
 };
+
+function drawFreconBox(doc, args) {
+  let size = [1, 1];
+  let location;
+  let offset = [0, 0];
+  let color = 0;
+  let scale = 1;
+  for (const arg of args.split(';')) {
+    const [key, text] = arg.split('=', 2);
+    switch (key) {
+      case 'size':
+      case 'location':
+      case 'offset': {
+        const pair = text?.match(/^\s*([+-]?\d+),\s*([+-]?\d+)\s*$/);
+        if (!pair) {
+          return;
+        }
+        const point = pair.slice(1).map(Number);
+        if (key === 'offset') {
+          offset = point.map((n) => n | 0);
+        } else if (key === 'location') {
+          location = point.map((n) => n >>> 0);
+        } else {
+          size = point.map((n) => n >>> 0);
+        }
+        break;
+      }
+      case 'color': {
+        const packed = text?.trim().match(
+            /^([+-]?)(0x[\da-f]+|0[0-7]*|[1-9]\d*)$/i);
+        if (!packed) {
+          return;
+        }
+        const digits = packed[2];
+        const magnitude = /^0[0-7]/.test(digits) ?
+          parseInt(digits, 8) : Number(digits);
+        color = (packed[1] === '-' ? -magnitude : magnitude) >>> 0;
+        break;
+      }
+      case 'scale':
+        if (!text || !/^\s*[+-]?\d+\s*$/.test(text)) {
+          return;
+        }
+        scale = Number(text) >>> 0;
+        break;
+    }
+  }
+
+  const ratio = doc.defaultView.devicePixelRatio;
+  const width = Math.round(doc.documentElement.clientWidth * ratio);
+  const height = Math.round(doc.documentElement.clientHeight * ratio);
+  scale ||= width > 2048 || height > 2048 ? 2 : 1;
+  const [w, h] = size.map((n) => n * scale);
+  const [x, y] = location ?? [
+    Math.trunc((width - w) / 2) + offset[0] * scale,
+    Math.trunc((height - h) / 2) + offset[1] * scale,
+  ];
+
+  let canvas = doc.getElementById('crosh-boxes');
+  if (!canvas) {
+    canvas = doc.createElement('canvas');
+    canvas.id = 'crosh-boxes';
+    canvas.setAttribute('aria-hidden', 'true');
+    canvas.style.cssText =
+        'position:fixed;inset:0;width:100%;height:100%;pointer-events:none';
+    doc.body.appendChild(canvas);
+  }
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  const context = canvas.getContext('2d');
+  const rgb = (color & 0xffffff).toString(16).padStart(6, '0');
+  const alpha = (color >>> 24).toString(16).padStart(2, '0');
+  context.fillStyle = `#${rgb}${alpha}`;
+  context.fillRect(x, y, w, h);
+}
 
 /**
  * Open a new session in a window.
