@@ -20,7 +20,6 @@
         display: flex;
         width: 100%;
         height: 100%;
-        gap: 1px;
         background: #383d43;
       }
 
@@ -30,11 +29,49 @@
         min-width: 0;
         overflow: hidden;
       }
+
+      .crosh-pane:first-child {
+        flex-grow: var(--left-pane-share, 50);
+      }
+
+      .crosh-pane:last-child {
+        flex-grow: calc(100 - var(--left-pane-share, 50));
+      }
+
+      .crosh-divider {
+        position: relative;
+        flex: 0 0 9px;
+        cursor: col-resize;
+        touch-action: none;
+        background: #191c20;
+      }
+
+      .crosh-divider::before {
+        content: '';
+        position: absolute;
+        inset: 0 4px;
+        background: #69727d;
+      }
+
+      .crosh-divider:hover::before,
+      .crosh-divider:active::before,
+      .crosh-divider:focus-visible::before {
+        inset-inline: 3px;
+        background: #a8cbff;
+      }
+
+      .crosh-divider:focus-visible {
+        outline: 2px solid #a8cbff;
+        outline-offset: -2px;
+      }
     </style>
     <title>crosh</title>
   </head>
 
   <body>
-    <div id="terminal"></div>
+    <div id="terminal">
+      <div class="crosh-divider" role="separator" aria-label="Resize panes"
+          aria-orientation="vertical" tabindex="0" hidden></div>
+    </div>
   </body>
 </html>

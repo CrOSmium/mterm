@@ -120,6 +120,8 @@ Crosh.init = function() {
   const args = params.getAll('args[]');
   const storage = getSyncStorage();
   const container = lib.notNull(document.querySelector('#terminal'));
+  const divider = lib.notNull(container.querySelector('.crosh-divider'));
+  installSplitResize(container, divider);
   const panes = [];
 
   const updateTitle = () => {
@@ -128,6 +130,7 @@ Crosh.init = function() {
 
   const updatePanes = () => {
     const split = panes.length === 2;
+    divider.hidden = !split;
     for (const pane of panes) {
       pane.crosh.setContextMenu_(split ?
         {name: 'Close pane', action: () => closePane(pane)} :
@@ -159,6 +162,7 @@ Crosh.init = function() {
     }
     const element = document.createElement('div');
     element.className = 'crosh-pane';
+    container.appendChild(divider);
     container.appendChild(element);
     const terminal = new hterm.Terminal({profileId, storage});
     const crosh = new Crosh({
@@ -185,6 +189,62 @@ Crosh.init = function() {
   addPane();
   return true;
 };
+
+function installSplitResize(container, divider) {
+  const minShare = 15;
+  const maxShare = 100 - minShare;
+  const keyStep = 5;
+  let share = 50;
+  let grabOffset = 0;
+
+  function resize(nextShare) {
+    share = Math.max(minShare, Math.min(maxShare, nextShare));
+    container.style.setProperty('--left-pane-share', String(share));
+    divider.setAttribute('aria-valuenow', String(Math.round(share)));
+  }
+
+  divider.setAttribute('aria-valuemin', String(minShare));
+  divider.setAttribute('aria-valuemax', String(maxShare));
+  resize(share);
+
+  divider.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || !e.isPrimary) {
+      return;
+    }
+    grabOffset = e.clientX - divider.getBoundingClientRect().left;
+    divider.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  divider.addEventListener('pointermove', (e) => {
+    if (!divider.hasPointerCapture(e.pointerId)) {
+      return;
+    }
+    const width = container.clientWidth - divider.offsetWidth;
+    if (width > 0) {
+      const left = e.clientX - container.getBoundingClientRect().left;
+      resize(100 * (left - grabOffset) / width);
+    }
+  });
+  divider.addEventListener('keydown', (e) => {
+    switch (e.key) {
+      case 'ArrowLeft':
+        resize(share - keyStep);
+        break;
+      case 'ArrowRight':
+        resize(share + keyStep);
+        break;
+      case 'Home':
+        resize(minShare);
+        break;
+      case 'End':
+        resize(maxShare);
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+  });
+}
 
 Crosh.prototype.attach_ = function(element) {
   const terminal = this.terminal;
