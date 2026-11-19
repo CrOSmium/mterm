@@ -80,15 +80,20 @@ globalThis.addEventListener('DOMContentLoaded', async (event) => {
  *   commandName: string,
  *   terminal: !hterm.Terminal,
  *   args: !Array<string>,
+ *   onExit: function(),
  * }} argv The argument object passed in from the Terminal.
  * @constructor
  */
-function Crosh({commandName, terminal, args}) {
+function Crosh({commandName, terminal, args, onExit}) {
   this.commandName = commandName;
   this.terminal = terminal;
   this.io = terminal.io;
   this.args = args;
+  this.onExit_ = onExit;
   this.id_ = null;
+  this.disposed_ = false;
+  this.outputListener_ = this.onProcessOutput_.bind(this);
+  this.prefListener_ = null;
 }
 
 /**
@@ -105,30 +110,98 @@ Crosh.msg = function(name, args) {
 /**
  * Static initializer called from crosh.html.
  *
- * This constructs a new Terminal instance and instructs it to run the Crosh
- * command.
+ * Creates the initial Crosh session and wires the split controls.
  *
  * @return {boolean}
  */
 Crosh.init = function() {
   const params = new URLSearchParams(globalThis.location.search);
   const profileId = params.get('profile');
+  const args = params.getAll('args[]');
   const storage = getSyncStorage();
-  const terminal = new hterm.Terminal({profileId, storage});
+  const container = lib.notNull(document.querySelector('#terminal'));
+  const splitRight = lib.notNull(document.querySelector('#split-right'));
+  const closeLeft = lib.notNull(document.querySelector('#close-left'));
+  const closeRight = lib.notNull(document.querySelector('#close-right'));
+  const panes = [];
+
+  const updateTitle = () => {
+    document.title = panes.map(({title}) => title).join(' | ');
+  };
+
+  const updatePanes = () => {
+    const split = panes.length === 2;
+    splitRight.hidden = split;
+    closeLeft.hidden = closeRight.hidden = !split;
+    updateTitle();
+  };
+
+  function closePane(pane) {
+    const index = panes.indexOf(pane);
+    if (index === -1) {
+      return;
+    }
+    if (panes.length === 1) {
+      globalThis.close();
+      return;
+    }
+    panes.splice(index, 1);
+    pane.crosh.dispose_();
+    pane.element.remove();
+    updatePanes();
+    globalThis.term_ = panes[0].crosh.terminal;
+    globalThis.term_.focus();
+  }
+
+  function addPane() {
+    if (panes.length === 2) {
+      return;
+    }
+    const element = document.createElement('div');
+    element.className = 'crosh-pane';
+    container.appendChild(element);
+    const terminal = new hterm.Terminal({profileId, storage});
+    const crosh = new Crosh({
+      commandName: 'crosh', terminal, args, onExit: () => closePane(pane),
+    });
+    const pane = {element, crosh, title: 'crosh'};
+    panes.push(pane);
+    terminal.setWindowTitle = (title) => {
+      pane.title = title;
+      updateTitle();
+    };
+    pane.crosh.attach_(element);
+    globalThis.term_ = terminal;
+    updatePanes();
+  }
+
+  splitRight.addEventListener('click', addPane);
+  closeLeft.addEventListener('click', () => closePane(panes[0]));
+  closeRight.addEventListener('click', () => closePane(panes[1]));
+  globalThis.onbeforeunload = (e) => {
+    const live = panes.find(({crosh}) => crosh.id_ !== null);
+    return live?.crosh.onBeforeUnload_(e);
+  };
+  globalThis.addEventListener('unload', () => {
+    panes.forEach(({crosh}) => crosh.dispose_());
+  });
+  addPane();
+  return true;
+};
+
+Crosh.prototype.attach_ = function(element) {
+  const terminal = this.terminal;
   // Use legacy pasting when running as an extension to avoid prompt.
   // TODO(crbug.com/1063219) We need this to not prompt the user for clipboard
   // permission.
   terminal.alwaysUseLegacyPasting = !isCrOSSystemApp();
 
-  // If we want to execute something other than the default crosh.
-  // Since Terminal has shipped and supports Crostini now, we don't need to
-  // support anything else, so hardcode crosh.
-  const commandName = 'crosh';
-  globalThis.document.title = commandName;
-
-  terminal.decorate(lib.notNull(document.querySelector('#terminal')));
+  terminal.decorate(element);
   terminal.installKeyboard();
-  const runCrosh = function() {
+  const runCrosh = () => {
+    if (this.disposed_) {
+      return;
+    }
     terminal.keyboard.bindings.addBinding('Ctrl+Shift+P', function() {
       openOptionsPage();
       return hterm.Keyboard.KeyActions.CANCEL;
@@ -137,14 +210,12 @@ Crosh.init = function() {
     terminal.onOpenOptionsPage = openOptionsPage;
     terminal.setCursorPosition(0, 0);
     terminal.setCursorVisible(true);
-    const crosh = new Crosh({
-      commandName,
-      terminal,
-      args: params.getAll('args[]'),
-    });
-    crosh.run();
+    this.run();
   };
-  terminal.onTerminalReady = function() {
+  terminal.onTerminalReady = () => {
+    if (this.disposed_) {
+      return;
+    }
     terminal.onFreconBox = (args) => drawFreconBox(terminal.getDocument(), args);
     terminal.freconInputEnabled = true;
     terminal.allowImagesInline = true;
@@ -155,21 +226,23 @@ Crosh.init = function() {
 
     // TODO(b/223076712): Avoid errors for nassh-crosh running on pre-M101.
     // Can be removed when stable is M101+.
-    if (!chrome.terminalPrivate.getPrefs) {
+    if (!chrome.terminalPrivate?.getPrefs) {
       runCrosh();
       return;
     }
 
     const prefKey = 'settings.accessibility';
-    const prefChanged = (prefs) => {
+    this.prefListener_ = (prefs) => {
       if (prefs.hasOwnProperty(prefKey)) {
         terminal.setAccessibilityEnabled(prefs[prefKey]);
       }
     };
-    chrome.terminalPrivate.onPrefChanged.addListener(prefChanged);
+    chrome.terminalPrivate.onPrefChanged.addListener(this.prefListener_);
     chrome.terminalPrivate.getPrefs([prefKey], (prefs) => {
-      prefChanged(prefs);
-      runCrosh();
+      if (!this.disposed_) {
+        this.prefListener_(prefs);
+        runCrosh();
+      }
     });
   };
 
@@ -199,11 +272,6 @@ Crosh.init = function() {
     {name: Crosh.msg('SEND_FEEDBACK_LABEL'),
      action: sendFeedback},
   ]);
-
-  // Useful for console debugging.
-  globalThis.term_ = terminal;
-
-  return true;
 };
 
 function drawFreconBox(doc, args) {
@@ -364,11 +432,15 @@ Crosh.prototype.run = function() {
   this.io.onVTKeystroke = this.io.sendString = this.sendString_.bind(this);
 
   this.io.onTerminalResize = this.onTerminalResize_.bind(this);
-  chrome.terminalPrivate.onProcessOutput.addListener(
-      this.onProcessOutput_.bind(this));
-  document.body.onunload = this.close_.bind(this);
+  chrome.terminalPrivate.onProcessOutput.addListener(this.outputListener_);
 
   const pidInit = (id) => {
+    if (this.disposed_) {
+      if (id !== undefined) {
+        chrome.terminalPrivate.closeTerminalProcess(id);
+      }
+      return;
+    }
     if (id === undefined) {
       this.io.println(Crosh.msg('COMMAND_STARTUP_FAILED',
                                 [this.commandName, lib.f.lastError('')]));
@@ -376,7 +448,6 @@ Crosh.prototype.run = function() {
       return;
     }
 
-    globalThis.onbeforeunload = this.onBeforeUnload_.bind(this);
     this.id_ = id;
 
     // Setup initial window size.
@@ -417,11 +488,24 @@ Crosh.prototype.sendString_ = function(string) {
  * Closes crosh terminal and exits the crosh command.
  */
 Crosh.prototype.close_ = function() {
+  chrome.terminalPrivate?.onProcessOutput.removeListener(this.outputListener_);
   if (this.id_ === null) {
     return;
   }
   chrome.terminalPrivate.closeTerminalProcess(this.id_);
   this.id_ = null;
+};
+
+Crosh.prototype.dispose_ = function() {
+  this.disposed_ = true;
+  this.close_();
+  if (this.prefListener_) {
+    chrome.terminalPrivate.onPrefChanged.removeListener(this.prefListener_);
+    this.prefListener_ = null;
+  }
+  this.terminal.getPrefs().stopObservingStorage();
+  this.terminal.setCursorBlink(false);
+  this.terminal.uninstallKeyboard();
 };
 
 /**
@@ -452,11 +536,10 @@ Crosh.prototype.onTerminalResize_ = function(width, height) {
  */
 Crosh.prototype.exit = function(code) {
   this.close_();
-  globalThis.onbeforeunload = null;
 
   const onExit = () => {
     if (this.terminal.getPrefs().get('close-on-exit')) {
-      globalThis.close();
+      this.onExit_();
     }
   };
 
@@ -471,7 +554,8 @@ Crosh.prototype.exit = function(code) {
     const ch = string.toLowerCase();
     if (ch == 'r' || ch == ' ' || ch == '\x0d' /* enter */ ||
         ch == '\x12' /* ctrl-r */) {
-      globalThis.location.reload();
+      this.terminal.freconInputEnabled = true;
+      this.run();
       return;
     }
 

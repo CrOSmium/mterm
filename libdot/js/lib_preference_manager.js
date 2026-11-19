@@ -76,6 +76,10 @@ lib.PreferenceManager = class {
     this.childLists_ = {};
   }
 
+  stopObservingStorage() {
+    this.storage.removeObserver(this.storageObserver_);
+  }
+
   /**
    * Update prefix and reset and reload storage, then notify prefix observers,
    * and all pref observers with new values.

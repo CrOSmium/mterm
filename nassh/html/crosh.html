@@ -8,6 +8,8 @@
     <style>
       body {
         position: absolute;
+        display: flex;
+        flex-direction: column;
         padding: 0;
         margin: 0;
         height: 100%;
@@ -16,17 +18,58 @@
         background-color: black;
       }
 
+      #split-controls {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+        padding: 3px 8px;
+        background: #191c20;
+        border-bottom: 1px solid #383d43;
+      }
+
+      #split-controls button {
+        padding: 2px 8px;
+        border: 1px solid transparent;
+        border-radius: 3px;
+        background: transparent;
+        color: #e1e6eb;
+        font: 12px monospace;
+      }
+
+      #split-controls button:hover {
+        border-color: #646d78;
+        background: #2a3037;
+      }
+
+      #split-controls button:focus-visible {
+        outline: 2px solid #a8cbff;
+        outline-offset: 1px;
+      }
+
       #terminal {
-        display: block;
+        display: flex;
+        flex: 1;
+        min-height: 0;
+        gap: 1px;
+        background: #383d43;
+      }
+
+      .crosh-pane {
         position: relative;
-        width: 100%;
-        height: 100%;
+        flex: 1 1 0;
+        min-width: 0;
+        overflow: hidden;
       }
     </style>
     <title>crosh</title>
   </head>
 
   <body>
+    <div id="split-controls" role="group" aria-label="Crosh panes">
+      <button id="split-right" type="button">Split right</button>
+      <button id="close-left" type="button" hidden>Close left</button>
+      <button id="close-right" type="button" hidden>Close right</button>
+    </div>
     <div id="terminal"></div>
   </body>
 </html>
