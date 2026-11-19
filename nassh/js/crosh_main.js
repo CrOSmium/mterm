@@ -120,9 +120,6 @@ Crosh.init = function() {
   const args = params.getAll('args[]');
   const storage = getSyncStorage();
   const container = lib.notNull(document.querySelector('#terminal'));
-  const splitRight = lib.notNull(document.querySelector('#split-right'));
-  const closeLeft = lib.notNull(document.querySelector('#close-left'));
-  const closeRight = lib.notNull(document.querySelector('#close-right'));
   const panes = [];
 
   const updateTitle = () => {
@@ -131,8 +128,11 @@ Crosh.init = function() {
 
   const updatePanes = () => {
     const split = panes.length === 2;
-    splitRight.hidden = split;
-    closeLeft.hidden = closeRight.hidden = !split;
+    for (const pane of panes) {
+      pane.crosh.setContextMenu_(split ?
+        {name: 'Close pane', action: () => closePane(pane)} :
+        {name: 'Split right', action: addPane});
+    }
     updateTitle();
   };
 
@@ -175,9 +175,6 @@ Crosh.init = function() {
     updatePanes();
   }
 
-  splitRight.addEventListener('click', addPane);
-  closeLeft.addEventListener('click', () => closePane(panes[0]));
-  closeRight.addEventListener('click', () => closePane(panes[1]));
   globalThis.onbeforeunload = (e) => {
     const live = panes.find(({crosh}) => crosh.id_ !== null);
     return live?.crosh.onBeforeUnload_(e);
@@ -245,7 +242,10 @@ Crosh.prototype.attach_ = function(element) {
       }
     });
   };
+};
 
+Crosh.prototype.setContextMenu_ = function(paneItem) {
+  const terminal = this.terminal;
   terminal.contextMenu.setItems([
     {name: Crosh.msg('TERMINAL_CLEAR_MENU_LABEL'),
      action: function() {
@@ -263,6 +263,7 @@ Crosh.prototype.attach_ = function(element) {
        // Preserve the full URI in case it has args like for vmshell.
        Crosh.openNewWindow_(globalThis.location.href);
      }},
+    paneItem,
     {name: Crosh.msg('FAQ_MENU_LABEL'),
      action: function() {
        lib.f.openWindow('https://hterm.org/x/ssh/faq', '_blank');
