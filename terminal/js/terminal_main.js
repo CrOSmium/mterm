@@ -84,11 +84,6 @@ function runTerminalHome() {
 window.addEventListener('DOMContentLoaded', async () => {
   await init();
   const tracker = await globalInit;
-  if (tracker.launchInfo.crosh) {
-    window.location.replace(
-        `/html/crosh.html${window.location.search}${window.location.hash}`);
-    return;
-  }
   setUpTitleHandler(tracker);
 
   if (tracker.launchInfo.home) {
