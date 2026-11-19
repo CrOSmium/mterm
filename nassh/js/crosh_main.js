@@ -145,6 +145,10 @@ Crosh.init = function() {
     crosh.run();
   };
   terminal.onTerminalReady = function() {
+    terminal.allowImagesInline = true;
+    terminal.getPrefs().addObserver('allow-images-inline', () => {
+      terminal.allowImagesInline = true;
+    });
     loadWebFonts(terminal.getDocument());
 
     // TODO(b/223076712): Avoid errors for nassh-crosh running on pre-M101.
