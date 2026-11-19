@@ -60,6 +60,7 @@
     "raw-loader": "~4",
     "regex-extract-loader": "~1",
     "rollup": "~2",
+    "sixel": "~0.16.0",
     "rollup-plugin-git-info": "~1",
     "terser": "~5",
     "typescript": "~5",

@@ -8,7 +8,7 @@
 
 import {Terminal} from 'xterm';
 import {CanvasAddon} from 'xterm-addon-canvas';
-import {ImageAddon} from 'xterm-addon-image';
+import {ImageAddon} from 'xterm-addon-image/out/ImageAddon.js';
 import {SearchAddon} from 'xterm-addon-search';
 import {Unicode11Addon} from 'xterm-addon-unicode11';
 import {WebglAddon} from 'xterm-addon-webgl';

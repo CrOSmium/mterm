@@ -482,7 +482,9 @@ export class XtermTerminal {
           new WebLinksAddon((e, uri) => lib.f.openWindow(uri, '_blank')));
       this.term.loadAddon(new Unicode11Addon());
       this.term.unicode.activeVersion = '11';
-      this.term.loadAddon(new ImageAddon());
+      this.term.loadAddon(new ImageAddon({
+        sixelSupport: window.location.hostname !== 'crosh',
+      }));
     }
 
     // This tracks whether an search is in progress. Note that you can get false

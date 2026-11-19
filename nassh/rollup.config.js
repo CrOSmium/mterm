@@ -15,6 +15,15 @@ import yaml from '@rollup/plugin-yaml';
 import gitInfo from 'rollup-plugin-git-info';
 
 const plugins = [
+  {
+    name: 'image-base64',
+    resolveId(source, importer) {
+      if (source === './base64.wasm' &&
+          importer?.endsWith('/xterm-addon-image/out/IIPHandler.js')) {
+        return new URL('./js/image_base64.js', import.meta.url).pathname;
+      }
+    },
+  },
   resolve({
     mainFields: ['module', 'jsnext:main'],
     preferBuiltins: false
