@@ -12,6 +12,7 @@ import {hterm} from '../../hterm/index.js';
 import {cleanupChromeSockets} from '../../wassh/js/sockets.js';
 
 import {terminal} from './terminal.js';
+import {CroshPanes} from './terminal_crosh.js';
 import {composeSshUrl, definePrefs, init, watchColors}
   from './terminal_common.js';
 import './terminal_home_app.js';
@@ -94,5 +95,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   const div = document.createElement('div');
   div.id = 'terminal';
   document.body.appendChild(div);
-  window.term_ = await terminal.init(div, tracker.launchInfo);
+  if (tracker.launchInfo.crosh) {
+    await new CroshPanes(div, tracker.launchInfo, terminal.init).add();
+  } else {
+    window.term_ = await terminal.init(div, tracker.launchInfo);
+  }
 });

@@ -770,6 +770,26 @@ export class XtermTerminal {
       return true;
     });
 
+    this.xtermInternal_.installFreconHandlers(
+        (args) => this.onFreconBox?.(args),
+        (args) => {
+          if (this.freconInputEnabled == null) {
+            return;
+          }
+          switch (args.toLowerCase()) {
+            case 'on':
+            case '1':
+            case 'true':
+              this.freconInputEnabled = true;
+              break;
+            case 'off':
+            case '0':
+            case 'false':
+              this.freconInputEnabled = false;
+              break;
+          }
+        });
+
     this.xtermInternal_.installTmuxControlModeHandler(
         (data) => this.onTmuxControlModeLine(data));
     this.xtermInternal_.installEscKHandler();
@@ -882,7 +902,7 @@ export class XtermTerminal {
 
       // Add a handler for pasting with the mouse.
       elem.addEventListener('mousedown',
-          (e) => this.onMouseDown_(/** @type {!MouseEvent} */(e)));
+          (e) => this.onMouseDown_(/** @type {!MouseEvent} */(e)), true);
 
       await this.scheduleFit_();
       this.a11yButtons_ = new A11yButtons(this.term, this.htermA11yReader_);
@@ -1194,17 +1214,18 @@ export class XtermTerminal {
    * @param {!MouseEvent} e
    */
   onMouseDown_(e) {
+    if (e.button === 2 && e.ctrlKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.contextMenu_.show({x: e.clientX, y: e.clientY});
+      return;
+    }
     if (this.term.modes.mouseTrackingMode !== 'none') {
       // xterm.js is in mouse mode and will handle the event.
       return;
     }
     const MIDDLE = 1;
     const RIGHT = 2;
-
-    if (e.button === RIGHT && e.ctrlKey) {
-      this.contextMenu_.show({x: e.clientX, y: e.clientY});
-      return;
-    }
 
     if (e.button === MIDDLE || (e.button === RIGHT &&
           this.prefs_.getBoolean('mouse-right-click-paste'))) {

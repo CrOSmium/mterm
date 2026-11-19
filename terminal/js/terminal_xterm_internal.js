@@ -221,6 +221,53 @@ export class XtermInternal {
     this.scheduleFullRefresh_();
   }
 
+  installFreconHandlers(onBox, onInput) {
+    this.terminal_.parser.registerOscHandler(777, (args) => {
+      if (args.startsWith('frecon-box;')) {
+        onBox(args.slice(11));
+      } else if (args.startsWith('frecon-input;')) {
+        onInput(args.slice(13));
+      } else {
+        return false;
+      }
+      return true;
+    });
+    const osc = this.terminal_._core._inputHandler._parser._oscParser;
+    const start = osc.start.bind(osc);
+    const put = osc.put.bind(osc);
+    const end = osc.end.bind(osc);
+    let prefix = null;
+    osc.start = () => {
+      prefix = [];
+      start();
+    };
+    osc.put = (data, begin, limit) => {
+      while (prefix !== null && begin < limit) {
+        prefix.push(data[begin++]);
+        const text = String.fromCodePoint(...prefix);
+        if (text === 'box:' || text === 'input:') {
+          const header = Uint32Array.from(
+              `777;frecon-${text.slice(0, -1)};`, (c) => c.codePointAt(0));
+          put(header, 0, header.length);
+          prefix = null;
+        } else if (!'box:'.startsWith(text) && !'input:'.startsWith(text)) {
+          put(Uint32Array.from(prefix), 0, prefix.length);
+          prefix = null;
+        }
+      }
+      if (prefix === null) {
+        put(data, begin, limit);
+      }
+    };
+    osc.end = (...args) => {
+      if (prefix?.length) {
+        put(Uint32Array.from(prefix), 0, prefix.length);
+      }
+      prefix = null;
+      return end(...args);
+    };
+  }
+
   /**
    * Install a ESC k (set window name) handler for tmux. The data in the
    * sequence is ignored. Note that 1) this actually affects xterm.js globally

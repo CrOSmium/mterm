@@ -13,6 +13,7 @@ import {cleanupChromeSockets} from '../../wassh/js/sockets.js';
 
 import {composeTmuxUrl, getOSInfo, watchColors} from './terminal_common.js';
 import {createEmulator} from './terminal_emulator.js';
+import {enableFrecon} from './terminal_crosh.js';
 import {terminalImport} from './terminal_import.js';
 import {LaunchInfo, SSHLaunchInfo} from './terminal_info.js';
 import {ClientWindow as TmuxClientWindow, TmuxControllerDriver}
@@ -32,13 +33,17 @@ window.preferenceManager;
  * @param {!hterm.Terminal} term
  * @constructor
  */
-terminal.Command = function(term) {
+terminal.Command = function(term, onExit = null) {
   this.term_ = term;
   this.io_ = this.term_.io;
   // We pass this ID to chrome to use for startup text which is sent before the
   // vsh process is created and we receive an ID from openVmShellProcess.
   this.id_ = Math.random().toString().substring(2);
   this.isFirstOutput_ = false;
+  this.onExit_ = onExit;
+  this.outputListener_ = this.onProcessOutput_.bind(this);
+  this.running_ = false;
+  this.generation_ = 0;
 };
 
 /**
@@ -69,12 +74,16 @@ terminal.openOptionsPage = function() {
  * @param {!LaunchInfo} launchInfo launch info.
  * @return {!Promise<!hterm.Terminal>} The new hterm.Terminal instance.
  */
-terminal.init = async function(element, launchInfo) {
+terminal.init = async function(element, launchInfo, pane = null) {
   const profileId = launchInfo.settingsProfileId ||
       hterm.Terminal.DEFAULT_PROFILE_ID;
 
   const storage = new lib.Storage.TerminalPrivate();
   const term = await createEmulator({storage, profileId});
+  if (pane) {
+    pane.term = term;
+    enableFrecon(term, element);
+  }
 
   term.decorate(element);
   term.installKeyboard();
@@ -135,8 +144,13 @@ terminal.init = async function(element, launchInfo) {
       return;
     }
 
-    const terminalCommand = new terminal.Command(term);
-    terminalCommand.run(launchInfo);
+    const terminalCommand = new terminal.Command(term, pane?.close);
+    if (pane) {
+      pane.command = terminalCommand;
+    }
+    if (!pane || pane.active) {
+      terminalCommand.run(launchInfo);
+    }
   };
 
   term.onTerminalReady = function() {
@@ -156,14 +170,24 @@ terminal.init = async function(element, launchInfo) {
     });
   };
 
-  term.contextMenu.setItems([
+  const menuItems = [
     {name: terminal.msg('TERMINAL_CLEAR_MENU_LABEL'),
-     action: function() { term.wipeContents(); }},
+     action: function() {
+       term.clearFrecon?.();
+       term.wipeContents();
+     }},
     {name: terminal.msg('TERMINAL_RESET_MENU_LABEL'),
-     action: function() { term.reset(); }},
+     action: function() {
+       term.clearFrecon?.(true);
+       term.reset();
+     }},
     {name: terminal.msg('TERMINAL_TITLE_SETTINGS'),
      action: function() { terminal.openOptionsPage(); }},
-  ]);
+  ];
+  if (pane) {
+    pane.menuItems = menuItems;
+  }
+  term.contextMenu.setItems(menuItems);
 
   return term;
 };
@@ -185,8 +209,13 @@ terminal.Command.prototype.onProcessOutput_ = function(id, type, data) {
   // When terminal starts, the first message may be type 'exit' if the process
   // fails to start.  In this case, we don't want to close the tab since we
   // can display an error message to the user.
-  if (type == 'exit' && !this.isFirstOutput_) {
-    this.exit(0);
+  if (type == 'exit') {
+    if (this.isFirstOutput_) {
+      this.close_();
+      this.io_.println('Launching terminal failed');
+    } else {
+      this.exit(0);
+    }
     return;
   }
 
@@ -214,10 +243,16 @@ terminal.Command.prototype.run = function(launchInfo) {
     return;
   }
 
-  chrome.terminalPrivate.onProcessOutput.addListener(
-      this.onProcessOutput_.bind(this));
+  const generation = ++this.generation_;
+  chrome.terminalPrivate.onProcessOutput.addListener(this.outputListener_);
 
   const pidInit = (id) => {
+    if (generation !== this.generation_) {
+      if (id !== undefined) {
+        chrome.terminalPrivate.closeTerminalProcess(id);
+      }
+      return;
+    }
     if (id === undefined) {
       this.io_.println(
           `Launching vmshell failed: ${lib.f.lastError('')}`);
@@ -225,13 +260,18 @@ terminal.Command.prototype.run = function(launchInfo) {
       return;
     }
 
-    window.onbeforeunload = this.onBeforeUnload_.bind(this);
+    if (!this.onExit_) {
+      window.onbeforeunload = this.onBeforeUnload_.bind(this);
+    }
     this.id_ = id;
+    this.running_ = true;
     this.isFirstOutput_ = true;
 
     this.io_.onVTKeystroke = this.io_.sendString = this.sendString_.bind(this);
     this.io_.onTerminalResize = this.onTerminalResize_.bind(this);
-    document.body.onunload = this.close_.bind(this);
+    if (!this.onExit_) {
+      document.body.onunload = this.close_.bind(this);
+    }
 
     // Setup initial window size.
     this.onTerminalResize_(
@@ -266,14 +306,21 @@ terminal.Command.prototype.onBeforeUnload_ = function(e) {
  * @param {string} string The string to send.
  */
 terminal.Command.prototype.sendString_ = function(string) {
-  chrome.terminalPrivate.sendInput(this.id_, string);
+  if (this.running_ && this.term_.freconInputEnabled !== false) {
+    chrome.terminalPrivate.sendInput(this.id_, string);
+  }
 };
 
 /**
  * Closes the terminal and exits the command.
  */
 terminal.Command.prototype.close_ = function() {
-  chrome.terminalPrivate.closeTerminalProcess(this.id_);
+  ++this.generation_;
+  chrome.terminalPrivate.onProcessOutput.removeListener(this.outputListener_);
+  if (this.running_) {
+    chrome.terminalPrivate.closeTerminalProcess(this.id_);
+  }
+  this.running_ = false;
   this.id_ = null;
 };
 
@@ -284,6 +331,9 @@ terminal.Command.prototype.close_ = function() {
  * @param {string|number} height The new terminal height.
  */
 terminal.Command.prototype.onTerminalResize_ = function(width, height) {
+  if (!this.running_) {
+    return;
+  }
   chrome.terminalPrivate.onTerminalResize(
       this.id_, Number(width), Number(height), function(success) {
         if (!success) {
@@ -299,10 +349,16 @@ terminal.Command.prototype.onTerminalResize_ = function(width, height) {
  */
 terminal.Command.prototype.exit = function(code) {
   this.close_();
-  window.onbeforeunload = null;
+  if (!this.onExit_) {
+    window.onbeforeunload = null;
+  }
 
   if (code === 0 && this.term_.getPrefs().get('close-on-exit')) {
-    window.close();
+    if (this.onExit_) {
+      this.onExit_();
+    } else {
+      window.close();
+    }
   }
 };
 
