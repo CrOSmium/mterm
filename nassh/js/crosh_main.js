@@ -146,6 +146,7 @@ Crosh.init = function() {
   };
   terminal.onTerminalReady = function() {
     terminal.onFreconBox = (args) => drawFreconBox(terminal.getDocument(), args);
+    terminal.freconInputEnabled = true;
     terminal.allowImagesInline = true;
     terminal.getPrefs().addObserver('allow-images-inline', () => {
       terminal.allowImagesInline = true;
@@ -181,6 +182,7 @@ Crosh.init = function() {
     {name: Crosh.msg('TERMINAL_RESET_MENU_LABEL'),
      action: function() {
        terminal.getDocument().getElementById('crosh-boxes')?.remove();
+       terminal.freconInputEnabled = true;
        terminal.reset();
      }},
     {name: Crosh.msg('NEW_WINDOW_MENU_LABEL'),

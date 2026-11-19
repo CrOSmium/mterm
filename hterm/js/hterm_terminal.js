@@ -191,6 +191,7 @@ hterm.Terminal = function({profileId, storage} = {}) {
   // Whether we allow images to be shown.
   this.allowImagesInline = null;
   this.onFreconBox = null;
+  this.freconInputEnabled = null;
 
   this.reportFocus = false;
 
@@ -3731,6 +3732,9 @@ hterm.Terminal.prototype.overlaySize = function() {
  * @param {string} string The VT string representing the keystroke, in UTF-16.
  */
 hterm.Terminal.prototype.onVTKeystroke = function(string) {
+  if (this.freconInputEnabled === false) {
+    return;
+  }
   if (this.scrollOnKeystroke_) {
     this.scrollPort_.scrollRowToBottom(this.getRowCount());
   }
@@ -4071,6 +4075,9 @@ hterm.Terminal.prototype.onPaste_ = function(e) {
  * @param {string} data The pasted data.
  */
 hterm.Terminal.prototype.onPasteData_ = function(data) {
+  if (this.freconInputEnabled === false) {
+    return;
+  }
   data = data.replace(/\n/mg, '\r');
   if (this.options_.bracketedPaste) {
     // We strip out most escape sequences as they can cause issues (like

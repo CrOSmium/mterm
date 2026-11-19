@@ -1225,6 +1225,24 @@ hterm.VT.OSC['box'] = function(parseState) {
   this.terminal.onFreconBox?.(parseState.args[0]);
 };
 
+hterm.VT.OSC['input'] = function(parseState) {
+  if (this.terminal.freconInputEnabled == null) {
+    return;
+  }
+  switch (parseState.args[0].toLowerCase()) {
+    case 'on':
+    case '1':
+    case 'true':
+      this.terminal.freconInputEnabled = true;
+      break;
+    case 'off':
+    case '0':
+    case 'false':
+      this.terminal.freconInputEnabled = false;
+      break;
+  }
+};
+
 /**
  * Collection of VT52 sequences.
  *
@@ -1593,7 +1611,7 @@ hterm.VT.ESC[']'] = function(parseState) {
 
     // We're done.
     const ary = parseState.args[0].match(/^(\d+);?(.*)$/) ||
-        parseState.args[0].match(/^(box):(.*)$/);
+        parseState.args[0].match(/^(box|input):(.*)$/);
     if (ary) {
       parseState.args[0] = ary[2];
       this.dispatch('OSC', ary[1], parseState);
